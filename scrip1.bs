@@ -1,0 +1,137 @@
+#!/bin/bash
+
+# Variables
+RESOURCE_GROUP="EcommerceResourceGroup"
+LOCATION="eastus"
+VM_NAME="EcommerceVM"
+IMAGE="UbuntuLTS"
+ADMIN_USERNAME="adminuser"
+ADMIN_PASSWORD="SecurePassword123!"
+DISK1_NAME="DataDisk1"
+DISK2_NAME="DataDisk2"
+DISK_SIZE_GB=1024  # 1 TB en GB
+
+# Crear un grupo de recursos
+az group create --name $RESOURCE_GROUP --location $LOCATION
+
+# Crear una máquina virtual
+az vm create \
+  --resource-group $RESOURCE_GROUP \
+  --name $VM_NAME \
+  --image $IMAGE \
+  --admin-username $ADMIN_USERNAME \
+  --admin-password $ADMIN_PASSWORD \
+  --size Standard_D4s_v3 \  # Tamaño de la VM (ajusta según tus necesidades)
+  --generate-ssh-keys
+
+# Crear dos discos de 1 TB
+az disk create \
+  --resource-group $RESOURCE_GROUP \
+  --name $DISK1_NAME \
+  --size-gb $DISK_SIZE_GB \
+  --sku Premium_LRS
+
+az disk create \
+  --resource-group $RESOURCE_GROUP \
+  --name $DISK2_NAME \
+  --size-gb $DISK_SIZE_GB \
+  --sku Premium_LRS
+
+# Conectar los discos a la máquina virtual
+az vm disk attach \
+  --resource-group $RESOURCE_GROUP \
+  --vm-name $VM_NAME \
+  --name $DISK1_NAME \
+  --lun 0
+
+az vm disk attach \
+  --resource-group $RESOURCE_GROUP \
+  --vm-name $VM_NAME \
+  --name $DISK2_NAME \
+  --lun 1
+
+# Abrir puertos necesarios (HTTP, HTTPS, SSH)
+az vm open-port \
+  --resource-group $RESOURCE_GROUP \
+  --name $VM_NAME \
+  --port 80 --priority 100
+
+az vm open-port \
+  --resource-group $RESOURCE_GROUP \
+  --name $VM_NAME \
+  --port 443 --priority 200
+
+az vm open-port \
+  --resource-group $RESOURCE_GROUP \
+  --name $VM_NAME \
+  --port 22 --priority 300
+
+# Obtener la IP pública de la VM
+PUBLIC_IP=$(az vm show \
+  --resource-group $RESOURCE_GROUP \
+  --name $VM_NAME \
+  --show-details \
+  --query "publicIps" \
+  --output tsv)
+
+echo "Máquina virtual creada con éxito. IP pública: $PUBLIC_IP"
+
+# Conectar a la VM via SSH y configurar WAMP Server y React Native
+ssh $ADMIN_USERNAME@$PUBLIC_IP << 'EOF'
+#!/bin/bash
+
+# Actualizar el sistema
+sudo apt update && sudo apt upgrade -y
+
+# Instalar WAMP Server (Apache, MySQL, PHP)
+sudo apt install apache2 -y
+sudo apt install mysql-server -y
+sudo apt install php libapache2-mod-php php-mysql -y
+
+# Configurar Apache para servir la aplicación de comercio electrónico
+sudo mkdir -p /var/www/ecommerce
+sudo chown -R $USER:$USER /var/www/ecommerce
+sudo chmod -R 755 /var/www/ecommerce
+
+# Crear un archivo de prueba para la aplicación
+echo "<?php phpinfo(); ?>" | sudo tee /var/www/ecommerce/index.php
+
+# Configurar el virtual host de Apache
+sudo tee /etc/apache2/sites-available/ecommerce.conf > /dev/null <<EOL
+<VirtualHost *:80>
+    ServerAdmin webmaster@ecommerce.com
+    DocumentRoot /var/www/ecommerce
+    ServerName ecommerce.com
+    ServerAlias www.ecommerce.com
+    ErrorLog ${APACHE_LOG_DIR}/error.log
+    CustomLog ${APACHE_LOG_DIR}/access.log combined
+</VirtualHost>
+EOL
+
+# Habilitar el sitio y reiniciar Apache
+sudo a2ensite ecommerce.conf
+sudo a2dissite 000-default.conf
+sudo systemctl restart apache2
+
+# Instalar Node.js (requerido para React Native)
+curl -fsSL https://deb.nodesource.com/setup_16.x | sudo -E bash -
+sudo apt install -y nodejs
+
+# Instalar React Native CLI
+sudo npm install -g react-native-cli
+
+# Montar los discos de 1 TB
+sudo mkdir -p /mnt/data1
+sudo mkdir -p /mnt/data2
+sudo mount /dev/sdc /mnt/data1
+sudo mount /dev/sdd /mnt/data2
+
+# Agregar montaje automático en /etc/fstab
+echo "/dev/sdc /mnt/data1 ext4 defaults 0 0" | sudo tee -a /etc/fstab
+echo "/dev/sdd /mnt/data2 ext4 defaults 0 0" | sudo tee -a /etc/fstab
+
+echo "Configuración completada. WAMP Server y React Native están listos."
+EOF
+
+echo "La máquina virtual está lista para alojar la aplicación de comercio electrónico."
+echo "Accede a la aplicación en: http://$PUBLIC_IP"
