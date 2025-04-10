@@ -1,0 +1,46 @@
+#!/bin/bash
+# Azure VM with Azure Monitor
+VM_NAME="EcommerceVM-Azure"
+AZ_RESOURCE_GROUP="EcommerceRG-Azure"
+AZ_LOCATION="eastus"
+ADMIN_USERNAME="adminuser"
+ADMIN_PASSWORD="SecurePassword123!"
+DISK_SIZE_GB=1024  # 1 TB
+
+# Crear grupo de recursos
+az group create --name $AZ_RESOURCE_GROUP --location $AZ_LOCATION
+
+# Crear VM con disco de datos de 1TB y extensión de Azure Monitor
+az vm create \
+  --resource-group $AZ_RESOURCE_GROUP \
+  --name $VM_NAME \
+  --image UbuntuLTS \
+  --admin-username $ADMIN_USERNAME \
+  --admin-password $ADMIN_PASSWORD \
+  --size Standard_D4s_v3 \
+  --data-disk-sizes-gb $DISK_SIZE_GB \
+  --public-ip-sku Standard \
+  --generate-ssh-keys
+
+# Instalar Azure Monitor Agent
+az vm extension set \
+  --resource-group $AZ_RESOURCE_GROUP \
+  --vm-name $VM_NAME \
+  --name AzureMonitorLinuxAgent \
+  --publisher Microsoft.Azure.Monitor
+
+# Abrir puertos (HTTP, HTTPS, SSH)
+az vm open-port --resource-group $AZ_RESOURCE_GROUP --name $VM_NAME --port 80 --priority 100
+az vm open-port --resource-group $AZ_RESOURCE_GROUP --name $VM_NAME --port 443 --priority 200
+az vm open-port --resource-group $AZ_RESOURCE_GROUP --name $VM_NAME --port 22 --priority 300
+
+# Obtener IP pública
+AZ_IP=$(az vm show --show-details --resource-group $AZ_RESOURCE_GROUP --name $VM_NAME --query publicIps --output tsv)
+
+echo "--------------------------------------------------"
+echo "Azure VM creada con éxito!"
+echo "Nombre: $VM_NAME"
+echo "IP Pública: $AZ_IP"
+echo "Conectar: ssh $ADMIN_USERNAME@$AZ_IP"
+echo "Monitorización: https://portal.azure.com/#blade/Microsoft_Azure_Monitoring/AzureMonitoringBrowseBlade/overview"
+echo "--------------------------------------------------"
