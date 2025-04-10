@@ -1,0 +1,44 @@
+#!/bin/bash
+# AWS EC2 with CloudWatch
+VM_NAME="EcommerceVM-AWS"
+AWS_REGION="us-east-1"
+AWS_KEY_NAME="your-key-pair"  # Reemplaza con tu key pair existente
+AWS_SECURITY_GROUP="ecommerce-sg"
+DISK_SIZE_GB=1024  # 1 TB
+
+# Crear security group
+aws ec2 create-security-group --group-name $AWS_SECURITY_GROUP --description "Security group for Ecommerce VM"
+
+# Configurar reglas (HTTP, HTTPS, SSH)
+aws ec2 authorize-security-group-ingress --group-name $AWS_SECURITY_GROUP --protocol tcp --port 80 --cidr 0.0.0.0/0
+aws ec2 authorize-security-group-ingress --group-name $AWS_SECURITY_GROUP --protocol tcp --port 443 --cidr 0.0.0.0/0
+aws ec2 authorize-security-group-ingress --group-name $AWS_SECURITY_GROUP --protocol tcp --port 22 --cidr 0.0.0.0/0
+
+# Crear instancia EC2 con CloudWatch Agent (User Data)
+aws ec2 run-instances \
+  --image-id ami-08c40ec9ead489470 \  # Ubuntu 20.04 LTS
+  --instance-type t3.xlarge \
+  --key-name $AWS_KEY_NAME \
+  --security-groups $AWS_SECURITY_GROUP \
+  --block-device-mappings "[{\"DeviceName\":\"/dev/sda1\",\"Ebs\":{\"VolumeSize\":$DISK_SIZE_GB,\"VolumeType\":\"gp3\"}}]" \
+  --tag-specifications "ResourceType=instance,Tags=[{Key=Name,Value=$VM_NAME}]" \
+  --user-data '#!/bin/bash
+    # Actualizar e instalar CloudWatch Agent
+    sudo apt update -y
+    sudo apt install -y unzip
+    curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+    unzip awscliv2.zip
+    sudo ./aws/install
+    sudo /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl -a fetch-config -m ec2 -s -c ssm:AmazonCloudWatch-linux'
+
+# Obtener IP pública (puede tardar 1-2 minutos en asignarse)
+sleep 120
+AWS_IP=$(aws ec2 describe-instances --filters "Name=tag:Name,Values=$VM_NAME" --query "Reservations[].Instances[].PublicIpAddress" --output text)
+
+echo "--------------------------------------------------"
+echo "AWS EC2 creada con éxito!"
+echo "Nombre: $VM_NAME"
+echo "IP Pública: $AWS_IP"
+echo "Conectar: ssh -i tu-key.pem ubuntu@$AWS_IP"
+echo "Monitorización: https://console.aws.amazon.com/cloudwatch/"
+echo "--------------------------------------------------"
