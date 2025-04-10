@@ -1,0 +1,32 @@
+#!/bin/bash
+# Google Cloud VM with Cloud Operations (Monitoring)
+VM_NAME="EcommerceVM-GCP"
+GCP_PROJECT="your-project-id"  # Reemplaza con tu ID de proyecto
+GCP_ZONE="us-central1-a"
+DISK_SIZE_GB=1024  # 1 TB
+
+# Crear la VM con disco de 1TB
+gcloud compute instances create $VM_NAME \
+  --project=$GCP_PROJECT \
+  --zone=$GCP_ZONE \
+  --machine-type=e2-standard-4 \
+  --create-disk=size=$DISK_SIZE_GB,type=pd-ssd \
+  --image-project=ubuntu-os-cloud \
+  --image-family=ubuntu-2004-lts \
+  --tags=http-server,https-server \
+  --metadata=enable-oslogin=TRUE \
+  --scopes=cloud-platform
+
+# Instalar el agente de Cloud Operations (monitoreo)
+gcloud compute ssh $VM_NAME --zone=$GCP_ZONE --command="curl -sSO https://dl.google.com/cloudagents/add-google-cloud-ops-agent-repo.sh && sudo bash add-google-cloud-ops-agent-repo.sh --also-install && sudo service google-cloud-ops-agent restart"
+
+# Obtener IP pública
+GCP_IP=$(gcloud compute instances describe $VM_NAME --zone=$GCP_ZONE --format='get(networkInterfaces[0].accessConfigs[0].natIP)')
+
+echo "--------------------------------------------------"
+echo "Google Cloud VM creada con éxito!"
+echo "Nombre: $VM_NAME"
+echo "IP Pública: $GCP_IP"
+echo "Conectar: gcloud compute ssh $VM_NAME --zone=$GCP_ZONE"
+echo "Monitorización: https://console.cloud.google.com/monitoring"
+echo "--------------------------------------------------"
